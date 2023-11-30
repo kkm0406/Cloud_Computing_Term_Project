@@ -5,9 +5,6 @@
  * using AWS Java SDK Library
  *
  */
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.Reader;
 import java.util.Iterator;
 import java.util.Scanner;
 import com.amazonaws.AmazonClientException;
@@ -15,27 +12,15 @@ import com.amazonaws.AmazonServiceException;
 import com.amazonaws.auth.profile.ProfileCredentialsProvider;
 import com.amazonaws.services.ec2.AmazonEC2;
 import com.amazonaws.services.ec2.AmazonEC2ClientBuilder;
-import com.amazonaws.services.ec2.model.DescribeAvailabilityZonesResult;
-import com.amazonaws.services.ec2.model.DescribeInstancesResult;
-import com.amazonaws.services.ec2.model.Instance;
-import com.amazonaws.services.ec2.model.Reservation;
-import com.amazonaws.services.ec2.model.DescribeInstancesRequest;
-import com.amazonaws.services.ec2.model.DescribeRegionsResult;
-import com.amazonaws.services.ec2.model.Region;
-import com.amazonaws.services.ec2.model.AvailabilityZone;
-import com.amazonaws.services.ec2.model.DryRunSupportedRequest;
-import com.amazonaws.services.ec2.model.StopInstancesRequest;
-import com.amazonaws.services.ec2.model.StartInstancesRequest;
-import com.amazonaws.services.ec2.model.InstanceType;
-import com.amazonaws.services.ec2.model.RunInstancesRequest;
-import com.amazonaws.services.ec2.model.RunInstancesResult;
-import com.amazonaws.services.ec2.model.RebootInstancesRequest;
-import com.amazonaws.services.ec2.model.RebootInstancesResult;
-import com.amazonaws.services.ec2.model.DescribeImagesRequest;
-import com.amazonaws.services.ec2.model.DescribeImagesResult;
-import com.amazonaws.services.ec2.model.Image;
-import com.amazonaws.services.ec2.model.Filter;
-import java.util.Properties;
+import com.amazonaws.services.ec2.model.*;
+import com.amazonaws.auth.AWSStaticCredentialsProvider;
+import com.amazonaws.auth.BasicAWSCredentials;
+import com.amazonaws.regions.Regions;
+import com.amazonaws.services.ec2.AmazonEC2;
+import com.amazonaws.services.ec2.AmazonEC2ClientBuilder;
+import com.amazonaws.services.ec2.model.CreateTagsRequest;
+import com.amazonaws.services.ec2.model.Tag;
+import java.util.UUID;
 
 public class Main {
 
@@ -77,7 +62,9 @@ public class Main {
             System.out.println("  3. start instance               4. available regions      ");
             System.out.println("  5. stop instance                6. create instance        ");
             System.out.println("  7. reboot instance              8. list images            ");
-            System.out.println("                                 99. quit                   ");
+            System.out.println("  9. instance types               10. rename instance       ");
+            System.out.println("  11. create image                12. describe instance     ");
+            System.out.println("  13. describe ami                99. quit                  ");
             System.out.println("------------------------------------------------------------");
 
             System.out.print("Enter an integer: ");
@@ -126,6 +113,42 @@ public class Main {
                         rebootInstance(instance_id);
                 }
                 case 8 -> listImages();
+                case 9 -> instanceType();
+                case 10 -> {
+                    System.out.print("Enter instance id: ");
+                    if (id_string.hasNext())
+                        instance_id = id_string.nextLine();
+                    if (!instance_id.isBlank()) {
+                        System.out.print("Enter new name: ");
+                        String newName = id_string.nextLine();
+                        renameInstance(instance_id, newName);
+                    }
+
+                }
+                case 11 -> {
+                    System.out.print("Enter instance id: ");
+                    if (id_string.hasNext())
+                        instance_id = id_string.nextLine();
+                    if (!instance_id.isBlank()) {
+                        createImage(instance_id);
+                    }
+                }
+                case 12 -> {
+                    System.out.print("Enter instance id: ");
+                    if (id_string.hasNext())
+                        instance_id = id_string.nextLine();
+                    if (!instance_id.isBlank()) {
+                        describeInstance(instance_id);
+                    }
+                }
+                case 13 -> {
+                    System.out.print("Enter AMI id: ");
+                    if (id_string.hasNext())
+                        instance_id = id_string.nextLine();
+                    if (!instance_id.isBlank()) {
+                        describeAMI(instance_id);
+                    }
+                }
                 case 99 -> {
                     System.out.println("bye!");
                     menu.close();
@@ -310,7 +333,9 @@ public class Main {
         DescribeImagesRequest request = new DescribeImagesRequest();
         ProfileCredentialsProvider credentialsProvider = new ProfileCredentialsProvider();
 
-        request.getFilters().add(new Filter().withName("name").withValues("htcondor-slave-image"));
+        String accountId = ec2.describeSecurityGroups().getSecurityGroups().get(0).getOwnerId();
+        request.getFilters().add(new Filter().withName("owner-id").withValues(accountId));
+
         request.setRequestCredentialsProvider(credentialsProvider);
 
         DescribeImagesResult results = ec2.describeImages(request);
@@ -320,5 +345,77 @@ public class Main {
                     images.getImageId(), images.getName(), images.getOwnerId());
         }
 
+    }
+
+    public static void instanceType() {
+        int idx = 1;
+        System.out.println("Listing available instance types");
+        for (InstanceType instanceType : InstanceType.values()) {
+            System.out.println(idx+". "+instanceType.toString());
+            idx += 1;
+        }
+    }
+
+    public static void renameInstance(String instance_id, String newName) {
+        System.out.println("Changing instance name....");
+        Tag tag = new Tag().withKey("Name").withValue(newName);
+        CreateTagsRequest createTagsRequest = new CreateTagsRequest()
+                .withResources(instance_id)
+                .withTags(tag);
+
+        ec2.createTags(createTagsRequest);
+
+        System.out.println("The instance name has been changed to "+newName+".");
+    }
+
+    public static void createImage(String instance_id) {
+        System.out.println("Creating an AMI (Amazon Machine Image)....");
+        String imageName = "image_" + UUID.randomUUID();
+        CreateImageRequest createImageRequest = new CreateImageRequest()
+                .withInstanceId(instance_id)
+                .withName(imageName)
+                .withNoReboot(true);
+
+        CreateImageResult createImageResult = ec2.createImage(createImageRequest);
+        String imageId = createImageResult.getImageId();
+
+        System.out.println("image "+ imageId+" has been created." );
+    }
+
+    public static void describeInstance(String instance_id) {
+        DescribeInstancesRequest describeInstancesRequest = new DescribeInstancesRequest()
+                .withInstanceIds(instance_id);
+
+        DescribeInstancesResult describeInstancesResult = ec2.describeInstances(describeInstancesRequest);
+
+        System.out.println("Describing instance....");
+        for (Reservation reservation : describeInstancesResult.getReservations()) {
+            for (Instance instance : reservation.getInstances()) {
+                System.out.println("Instance tag: " + instance.getTags().getFirst().getValue());
+                System.out.println("Instance type: " + instance.getInstanceType());
+                System.out.println("Public DNS Name: " + instance.getPublicDnsName());
+                System.out.println("Private DNS Name: " + instance.getPrivateDnsName());
+                System.out.println("State: " + instance.getState().getName());
+                System.out.println("Public Ip address: " + instance.getPublicIpAddress());
+                System.out.println("Private Ip address: " + instance.getPrivateIpAddress());
+            }
+        }
+    }
+
+    public static void describeAMI(String ami_id) {
+
+        DescribeImagesRequest describeImagesRequest = new DescribeImagesRequest()
+                .withImageIds(ami_id);
+
+        DescribeImagesResult describeImagesResult = ec2.describeImages(describeImagesRequest);
+
+        System.out.println("Describing an AMI (Amazon Machine Image)....");
+        for (Image image : describeImagesResult.getImages()) {
+            System.out.println("Name: " + image.getName());
+            System.out.println("Creation date: " + image.getCreationDate());
+            System.out.println("Owner: " + image.getOwnerId());
+            System.out.println("State: " + image.getState());
+            System.out.println("Architecture: " + image.getArchitecture());
+        }
     }
 }
