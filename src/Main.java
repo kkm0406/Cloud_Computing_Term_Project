@@ -5,22 +5,27 @@
  * using AWS Java SDK Library
  *
  */
-import java.util.Iterator;
-import java.util.Scanner;
+
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.AmazonServiceException;
 import com.amazonaws.auth.profile.ProfileCredentialsProvider;
 import com.amazonaws.services.ec2.AmazonEC2;
+import com.amazonaws.services.ec2.AmazonEC2Client;
 import com.amazonaws.services.ec2.AmazonEC2ClientBuilder;
 import com.amazonaws.services.ec2.model.*;
-import com.amazonaws.auth.AWSStaticCredentialsProvider;
-import com.amazonaws.auth.BasicAWSCredentials;
-import com.amazonaws.regions.Regions;
-import com.amazonaws.services.ec2.AmazonEC2;
-import com.amazonaws.services.ec2.AmazonEC2ClientBuilder;
-import com.amazonaws.services.ec2.model.CreateTagsRequest;
-import com.amazonaws.services.ec2.model.Tag;
+import com.jcraft.jsch.Channel;
+import com.jcraft.jsch.ChannelExec;
+import com.jcraft.jsch.JSch;
+import com.jcraft.jsch.Session;
+
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.Scanner;
 import java.util.UUID;
+
 
 public class Main {
 
@@ -51,8 +56,7 @@ public class Main {
         Scanner id_string = new Scanner(System.in);
         int number = 0;
 
-        while(true)
-        {
+        while (true) {
             System.out.println("                                                            ");
             System.out.println("                                                            ");
             System.out.println("------------------------------------------------------------");
@@ -64,14 +68,15 @@ public class Main {
             System.out.println("  7. reboot instance              8. list images            ");
             System.out.println("  9. instance types               10. rename instance       ");
             System.out.println("  11. create image                12. describe instance     ");
-            System.out.println("  13. describe ami                99. quit                  ");
+            System.out.println("  13. describe ami                14. condor status         ");
+            System.out.println("                                  99. quit                  ");
             System.out.println("------------------------------------------------------------");
 
             System.out.print("Enter an integer: ");
 
-            if(menu.hasNextInt()){
+            if (menu.hasNextInt()) {
                 number = menu.nextInt();
-            }else {
+            } else {
                 System.out.println("concentration!");
                 break;
             }
@@ -149,6 +154,14 @@ public class Main {
                         describeAMI(instance_id);
                     }
                 }
+                case 14 -> {
+                    System.out.print("Enter instance id: ");
+                    if (id_string.hasNext())
+                        instance_id = id_string.nextLine();
+                    if (!instance_id.isBlank()) {
+                        condorStatus(instance_id);
+                    }
+                }
                 case 99 -> {
                     System.out.println("bye!");
                     menu.close();
@@ -168,11 +181,11 @@ public class Main {
 
         DescribeInstancesRequest request = new DescribeInstancesRequest();
 
-        while(!done) {
+        while (!done) {
             DescribeInstancesResult response = ec2.describeInstances(request);
 
-            for(Reservation reservation : response.getReservations()) {
-                for(Instance instance : reservation.getInstances()) {
+            for (Reservation reservation : response.getReservations()) {
+                for (Instance instance : reservation.getInstances()) {
                     System.out.printf(
                             "[id] %s, " +
                                     "[AMI] %s, " +
@@ -190,21 +203,21 @@ public class Main {
 
             request.setNextToken(response.getNextToken());
 
-            if(response.getNextToken() == null) {
+            if (response.getNextToken() == null) {
                 done = true;
             }
         }
     }
 
-    public static void availableZones()	{
+    public static void availableZones() {
 
         System.out.println("Available zones....");
         try {
             DescribeAvailabilityZonesResult availabilityZonesResult = ec2.describeAvailabilityZones();
-            Iterator <AvailabilityZone> iterator = availabilityZonesResult.getAvailabilityZones().iterator();
+            Iterator<AvailabilityZone> iterator = availabilityZonesResult.getAvailabilityZones().iterator();
 
             AvailabilityZone zone;
-            while(iterator.hasNext()) {
+            while (iterator.hasNext()) {
                 zone = iterator.next();
                 System.out.printf("[id] %s,  [region] %15s, [zone] %15s\n", zone.getZoneId(), zone.getRegionName(), zone.getZoneName());
             }
@@ -249,7 +262,7 @@ public class Main {
 
         DescribeRegionsResult regions_response = ec2.describeRegions();
 
-        for(Region region : regions_response.getRegions()) {
+        for (Region region : regions_response.getRegions()) {
             System.out.printf(
                     "[region] %15s, " +
                             "[endpoint] %s\n",
@@ -276,9 +289,8 @@ public class Main {
             ec2.stopInstances(request);
             System.out.printf("Successfully stop instance %s\n", instance_id);
 
-        } catch(Exception e)
-        {
-            System.out.println("Exception: "+e.toString());
+        } catch (Exception e) {
+            System.out.println("Exception: " + e.toString());
         }
 
     }
@@ -290,7 +302,8 @@ public class Main {
                 .withImageId(ami_id)
                 .withInstanceType(InstanceType.T2Micro)
                 .withMaxCount(1)
-                .withMinCount(1);
+                .withMinCount(1)
+                .withKeyName("aws-test");
 
         RunInstancesResult run_response = ec2.runInstances(run_request);
 
@@ -317,9 +330,8 @@ public class Main {
             System.out.printf(
                     "Successfully rebooted instance %s", instance_id);
 
-        } catch(Exception e)
-        {
-            System.out.println("Exception: "+e.toString());
+        } catch (Exception e) {
+            System.out.println("Exception: " + e.toString());
         }
 
 
@@ -340,7 +352,7 @@ public class Main {
 
         DescribeImagesResult results = ec2.describeImages(request);
 
-        for(Image images :results.getImages()){
+        for (Image images : results.getImages()) {
             System.out.printf("[ImageID] %s, [Name] %s, [Owner] %s\n",
                     images.getImageId(), images.getName(), images.getOwnerId());
         }
@@ -351,7 +363,7 @@ public class Main {
         int idx = 1;
         System.out.println("Listing available instance types");
         for (InstanceType instanceType : InstanceType.values()) {
-            System.out.println(idx+". "+instanceType.toString());
+            System.out.println(idx + ". " + instanceType.toString());
             idx += 1;
         }
     }
@@ -361,11 +373,11 @@ public class Main {
         Tag tag = new Tag().withKey("Name").withValue(newName);
         CreateTagsRequest createTagsRequest = new CreateTagsRequest()
                 .withResources(instance_id)
-                .withTags(tag);
+                .withTags(Collections.singleton(tag));
 
         ec2.createTags(createTagsRequest);
 
-        System.out.println("The instance name has been changed to "+newName+".");
+        System.out.println("The instance name has been changed to " + newName + ".");
     }
 
     public static void createImage(String instance_id) {
@@ -379,7 +391,7 @@ public class Main {
         CreateImageResult createImageResult = ec2.createImage(createImageRequest);
         String imageId = createImageResult.getImageId();
 
-        System.out.println("image "+ imageId+" has been created." );
+        System.out.println("image " + imageId + " has been created.");
     }
 
     public static void describeInstance(String instance_id) {
@@ -418,4 +430,40 @@ public class Main {
             System.out.println("Architecture: " + image.getArchitecture());
         }
     }
+
+    public static void condorStatus(String instance_id) {
+
+        DescribeInstancesRequest describeInstancesRequest = new DescribeInstancesRequest().withInstanceIds(instance_id);
+        DescribeInstancesResult describeInstancesResult = ec2.describeInstances(describeInstancesRequest);
+        Instance instance = describeInstancesResult.getReservations().get(0).getInstances().get(0);
+        String ipAddress = instance.getPublicIpAddress();
+
+        try {
+            JSch jsch = new JSch();
+            jsch.addIdentity("C:\\Users\\sdjmc\\Desktop\\aws-test.pem");
+
+            Session session = jsch.getSession("ec2-user", ipAddress, 22);
+            session.setConfig("StrictHostKeyChecking", "no");
+            session.connect();
+
+            Channel channel = session.openChannel("exec");
+            ((ChannelExec) channel).setCommand("condor_status");
+
+            InputStream commandOutput = channel.getInputStream();
+            channel.connect();
+
+            BufferedReader reader = new BufferedReader(new InputStreamReader(commandOutput));
+            String line;
+            while ((line = reader.readLine()) != null) {
+                System.out.println(line);
+            }
+            channel.disconnect();
+            session.disconnect();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+
+    }
+
 }
